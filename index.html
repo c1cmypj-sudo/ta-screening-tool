@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TA Screening Notes</title>
+<style>
+:root { --bg:#f8f9fa; --card:#fff; --border:#e2e8f0; --accent:#2563eb; --red:#dc2626; }
+* { box-sizing:border-box; }
+body { font-family:system-ui,-apple-system,sans-serif; background:var(--bg); margin:0; padding:16px; color:#1e293b; line-height:1.5; }
+.container { max-width:900px; margin:0 auto; }
+header { background:var(--card); padding:16px; border-radius:12px; border:1px solid var(--border); margin-bottom:16px; }
+h1 { margin:0 0 8px; font-size:1.4rem; }
+.meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; margin-top:12px; }
+input, textarea { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font:inherit; }
+textarea { min-height:70px; resize:vertical; }
+.controls { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+button { padding:8px 14px; border:none; border-radius:8px; cursor:pointer; font:inherit; }
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-secondary { background:#e2e8f0; }
+.btn-danger { background:var(--red); color:#fff; }
+.q { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:12px; }
+.q.core { border-left:4px solid var(--accent); }
+.q-title { font-weight:600; margin-bottom:6px; }
+.score-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+.score-btn { width:36px; height:36px; border-radius:8px; border:1px solid var(--border); background:#fff; }
+.score-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.redflag-btn { padding:0 12px; height:36px; border-radius:8px; border:1px solid var(--border); background:#fee2e2; color:var(--red); font-weight:500; }
+.redflag-btn.active { background:var(--red); color:#fff; border-color:var(--red); }
+.hidden { display:none !important; }
+.status { font-size:0.85rem; color:#64748b; margin-top:8px; }
+.export-area { background:#f1f5f9; padding:12px; border-radius:8px; white-space:pre-wrap; font-family:ui-monospace,monospace; font-size:0.85rem; max-height:320px; overflow:auto; }
+footer { text-align:center; margin-top:24px; font-size:0.8rem; color:#94a3b8; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>TA Screening Notes</h1>
+    <p>First interview / screening · 純本地 · 過日自動清</p>
+    <div class="meta">
+      <input id="candidate" placeholder="候選人姓名">
+      <input id="role" placeholder="職位名稱">
+      <input id="date" type="date">
+      <input id="interviewer" placeholder="面試官 (TA)">
+    </div>
+    <div class="controls">
+      <button class="btn-secondary" id="toggleCore">只看核心題</button>
+      <button class="btn-primary" id="exportBtn">複製到 ATS</button>
+      <button class="btn-danger" id="clearBtn">清除今日資料</button>
+    </div>
+    <div class="status" id="status">自動儲存中...</div>
+  </header>
+  <details open style="background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px;">
+    <summary style="font-weight:600; cursor:pointer;">評分標準 (Scoring Rubric)</summary>
+    <div style="margin-top:10px; font-size:0.9rem;">
+      <p><strong>原則：</strong>評證據，不評口才。有真實例子先計分。</p>
+      <ul style="margin:8px 0; padding-left:20px;">
+        <li><strong>1</strong>：空泛、無例子、或明顯隱瞞／矛盾。</li>
+        <li><strong>2</strong>：有講但含糊、缺關鍵細節、或 pattern 有問題。</li>
+        <li><strong>3</strong>：有真實例子，但仍有缺口（例如缺數字、時間線、自己角色）。</li>
+        <li><strong>4</strong>：具體、清楚自己擁有、細節足夠。</li>
+        <li><strong>5</strong>：非常具體、可寫得落、自己主導、可驗證、無明顯缺口。</li>
+      </ul>
+      <p><strong>紅旗：</strong>即時標記重大問題（穩定性 pattern、薪酬落差大、counteroffer 風險高、合規問題、動機空泛、scope 誇大等）。紅旗題目會喺輸出突出。</p>
+      <p style="color:#64748b; font-size:0.85rem;">建議：核心題優先評，非核心題可按時間決定。</p>
+    </div>
+  </details>
+  <div id="questions"></div>
+  <div class="q">
+    <div class="q-title">自由筆記 / 整體印象</div>
+    <textarea id="freeNotes" placeholder="任何額外觀察、語氣、紅旗、建議下一輪深入..."></textarea>
+  </div>
+  <div id="exportPreview" class="export-area hidden"></div>
+  <footer>資料只存在本機瀏覽器 · 每日自動清除 · 唔會上傳</footer>
+</div>
+<script>
+const QUESTIONS = [
+  { id:"roles", title:"過往職位與真實職責", prompt:"最近 3 份工：職位名稱、公司、主要職責、團隊規模、向邊個報告、有唔預算／決策權。邊份最相關？", why:"確認真實 scope，唔係只講職銜。", core:true },
+  { id:"leave1", title:"離開原因 1（最近一份）", prompt:"最近一份工點解離開？主動定被動？", why:"睇最新動機。", core:true },
+  { id:"leave2", title:"離開原因 2（第二份）", prompt:"第二份工點解離開？", why:"睇 pattern。", core:true },
+  { id:"leave3", title:"離開原因 3（第三份）", prompt:"第三份工點解離開？有唔重複 pattern（管理、發展、環境、薪酬）？", why:"穩定性同 pattern 比單一次重要。", core:true },
+  { id:"timeline", title:"Timeline gap / 短任期", prompt:"有唔 gap 或短過 1 年嘅任期？點解釋？", why:"穩定性訊號。", core:true },
+  { id:"wantnext", title:"真正想要嘅下一份工", prompt:"你想要咩（職責、環境、發展）？咩情況會令你拒絕 offer？", why:"睇期望同 closeability。", core:true },
+  { id:"whyus", title:"點解呢間公司 / 呢個職位", prompt:"點解申請我哋？有唔做過功課？邊哋經驗最 match？", why:"動機真實度。", core:true },
+  { id:"salary", title:"薪酬（而家 + 期望）", prompt:"而家月薪（基本+獎金）？期望月薪？其他要求？", why:"範圍同合理性。", core:true },
+  { id:"notice", title:"通知期", prompt:"通知期幾耐？可唔可以提早？有唔 garden leave？", why:"入職時間。", core:true },
+  { id:"competing", title:"其他面試 / 進行中流程", prompt:"而家有幾多個其他面試？分別到邊個階段？", why:"競爭同緊迫性。", core:true },
+  { id:"offers", title:"現有 offer / deadline", prompt:"有唔已收到嘅 offer？deadline 係幾時？", why:"closeability。", core:false },
+  { id:"counteroffer", title:"Counteroffer risk", prompt:"如果而家公司 counteroffer，你會點考慮？", why:"流失風險。", core:true },
+  { id:"availability", title:"未來兩星期面試可用性", prompt:"未來兩星期邊哋時間方便面試？", why:"推進速度。", core:false },
+  { id:"musthaves", title:"必須條件具體例子", prompt:"職位最重要嘅 2-3 個要求，請用具體例子證明（唔好只講自我評分）。", why:"驗證 fit，唔係空談。", core:true },
+  { id:"language", title:"語言能力", prompt:"廣東話 / 普通話 / 英文實際程度？工作中點用？", why:"如有語言要求就必須驗證。", core:false },
+  { id:"tools", title:"系統與工具（實操 vs 監督）", prompt:"相關系統／工具你係親自動手，定係只係監督／用過？", why:"真實技能。", core:false },
+  { id:"risk", title:"風險與合規", prompt:"有唔 non-compete / non-solicit？背景調查同 reference 可唔可以做？幾時可以聯絡？有唔利益衝突（親戚、前同事、供應商）？有唔需要預先解釋嘅嘢？", why:"減低入職後風險。", core:true },
+  { id:"ownership", title:"擁有權與推進例子", prompt:"講一個你自己推進嘅項目或客戶。遇到阻礙點做？有唔書面紀錄？", why:"基本 ownership 訊號（參考原工具）。", core:false }
+];
+const STORAGE_KEY = "ta_screening_v3";
+let showCoreOnly = false;
+let data = { date: new Date().toISOString().slice(0,10), answers: {}, meta: {} };
+function safeGetItem(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function safeSetItem(key, val) { try { localStorage.setItem(key, val); return true; } catch { return false; } }
+function safeRemoveItem(key) { try { localStorage.removeItem(key); } catch {} }
+function loadData() {
+  const today = new Date().toISOString().slice(0,10);
+  try {
+    const raw = safeGetItem(STORAGE_KEY);
+    if (!raw) return { date: today, answers: {}, meta: {} };
+    const saved = JSON.parse(raw);
+    if (saved.date !== today) { safeRemoveItem(STORAGE_KEY); return { date: today, answers: {}, meta: {} }; }
+    return saved;
+  } catch { return { date: today, answers: {}, meta: {} }; }
+}
+function saveData() {
+  data.date = new Date().toISOString().slice(0,10);
+  const candidateEl = document.getElementById("candidate");
+  if (!candidateEl) return;
+  data.meta = {
+    candidate: candidateEl.value,
+    role: document.getElementById("role")?.value || "",
+    date: document.getElementById("date")?.value || "",
+    interviewer: document.getElementById("interviewer")?.value || "",
+    freeNotes: document.getElementById("freeNotes")?.value || ""
+  };
+  safeSetItem(STORAGE_KEY, JSON.stringify(data));
+  const status = document.getElementById("status");
+  if (status) status.textContent = "已儲存 · " + new Date().toLocaleTimeString();
+}
+function render() {
+  const container = document.getElementById("questions");
+  if (!container) return;
+  container.innerHTML = "";
+  QUESTIONS.forEach(q => {
+    if (showCoreOnly && !q.core) return;
+    const ans = data.answers[q.id] || { score: 0, redflag: false, evidence: "" };
+    const div = document.createElement("div");
+    div.className = "q" + (q.core ? " core" : "");
+    const title = document.createElement("div");
+    title.className = "q-title";
+    title.textContent = q.title + (q.core ? " · 核心" : "");
+    div.appendChild(title);
+    const prompt = document.createElement("div");
+    prompt.style.cssText = "font-size:0.9rem;color:#475569;margin-bottom:4px;";
+    prompt.textContent = q.prompt;
+    div.appendChild(prompt);
+    const why = document.createElement("div");
+    why.style.cssText = "font-size:0.8rem;color:#64748b;margin-bottom:8px;";
+    why.textContent = "為何問：" + q.why;
+    div.appendChild(why);
+    const scoreRow = document.createElement("div");
+    scoreRow.className = "score-row";
+    [1,2,3,4,5].forEach(n => {
+      const btn = document.createElement("button");
+      btn.className = "score-btn" + (ans.score === n ? " active" : "");
+      btn.textContent = n;
+      btn.dataset.q = q.id;
+      btn.dataset.score = n;
+      scoreRow.appendChild(btn);
+    });
+    const rf = document.createElement("button");
+    rf.className = "redflag-btn" + (ans.redflag ? " active" : "");
+    rf.textContent = "紅旗";
+    rf.dataset.q = q.id;
+    rf.dataset.redflag = "1";
+    scoreRow.appendChild(rf);
+    div.appendChild(scoreRow);
+    const ta = document.createElement("textarea");
+    ta.dataset.q = q.id;
+    ta.placeholder = "證據 / 具體例子 / 建議深入...";
+    ta.value = ans.evidence || "";
+    div.appendChild(ta);
+    container.appendChild(div);
+  });
+  const m = data.meta || {};
+  const setIfNotFocused = (id, value) => {
+    const el = document.getElementById(id);
+    if (el && document.activeElement !== el) el.value = value || "";
+  };
+  setIfNotFocused("candidate", m.candidate);
+  setIfNotFocused("role", m.role);
+  setIfNotFocused("date", m.date || new Date().toISOString().slice(0,10));
+  setIfNotFocused("interviewer", m.interviewer);
+  setIfNotFocused("freeNotes", m.freeNotes);
+  bindEvents();
+}
+function bindEvents() {
+  document.querySelectorAll(".score-btn, .redflag-btn").forEach(btn => {
+    btn.onclick = () => {
+      const qid = btn.dataset.q;
+      if (!data.answers[qid]) data.answers[qid] = { score:0, redflag:false, evidence:"" };
+      if (btn.dataset.redflag) {
+        data.answers[qid].redflag = !data.answers[qid].redflag;
+      } else {
+        data.answers[qid].score = parseInt(btn.dataset.score);
+      }
+      saveData();
+      render();
+    };
+  });
+  document.querySelectorAll("textarea[data-q]").forEach(ta => {
+    ta.oninput = () => {
+      const qid = ta.dataset.q;
+      if (!data.answers[qid]) data.answers[qid] = { score:0, redflag:false, evidence:"" };
+      data.answers[qid].evidence = ta.value;
+      saveData();
+    };
+  });
+  ["candidate","role","date","interviewer","freeNotes"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.oninput = saveData;
+  });
+}
+function generateExport() {
+  const m = data.meta || {};
+  let text = `TA Screening Notes\n`;
+  text += `候選人：${m.candidate||"-"}\n`;
+  text += `職位：${m.role||"-"}\n`;
+  text += `日期：${m.date||"-"}\n`;
+  text += `面試官：${m.interviewer||"-"}\n\n`;
+  let redflags = [];
+  let lowScores = [];
+  QUESTIONS.forEach(q => {
+    const a = data.answers[q.id] || {};
+    if (!a.score && !a.evidence && !a.redflag) return;
+    text += `【${q.title}】\n`;
+    text += `分數：${a.score||"未評"}/5${a.redflag?" · 紅旗":""}\n`;
+    if (a.evidence) text += `證據 / 建議深入：${a.evidence}\n`;
+    text += `\n`;
+    if (a.redflag) redflags.push(q.title);
+    if (a.score && a.score <= 2) lowScores.push(q.title);
+  });
+  if (m.freeNotes) text += `【自由筆記】\n${m.freeNotes}\n\n`;
+  text += `=== 總結建議 ===\n`;
+  if (redflags.length) text += `紅旗題目：${redflags.join("、")}\n`;
+  if (lowScores.length) text += `低分題目（建議深入）：${lowScores.join("、")}\n`;
+  if (!redflags.length && !lowScores.length) text += `暫未見明顯紅旗，建議按需要進入下一輪。\n`;
+  else text += `建議下一輪重點追問上述紅旗 / 低分項目。\n`;
+  return text;
+}
+window.addEventListener("DOMContentLoaded", () => {
+  try {
+    data = loadData();
+    const toggleBtn = document.getElementById("toggleCore");
+    if (toggleBtn) {
+      toggleBtn.onclick = () => {
+        showCoreOnly = !showCoreOnly;
+        toggleBtn.textContent = showCoreOnly ? "顯示全部題目" : "只看核心題";
+        render();
+      };
+    }
+    const exportBtn = document.getElementById("exportBtn");
+    if (exportBtn) {
+      exportBtn.onclick = async () => {
+        try {
+          const text = generateExport();
+          const preview = document.getElementById("exportPreview");
+          if (preview) {
+            preview.textContent = text;
+            preview.classList.remove("hidden");
+          }
+          await navigator.clipboard.writeText(text);
+          const status = document.getElementById("status");
+          if (status) status.textContent = "已複製到剪貼簿 · 可直接貼入 ATS";
+        } catch (err) {
+          const status = document.getElementById("status");
+          if (status) status.textContent = "複製失敗，請手動複製上面文字";
+        }
+      };
+    }
+    const clearBtn = document.getElementById("clearBtn");
+    if (clearBtn) {
+      clearBtn.onclick = () => {
+        if (confirm("清除今日所有資料？")) {
+          safeRemoveItem(STORAGE_KEY);
+          data = loadData();
+          render();
+          const preview = document.getElementById("exportPreview");
+          if (preview) preview.classList.add("hidden");
+          const status = document.getElementById("status");
+          if (status) status.textContent = "已清除";
+        }
+      };
+    }
+    render();
+  } catch (e) {
+    console.error(e);
+    const status = document.getElementById("status");
+    if (status) status.textContent = "載入錯誤：" + (e.message || "unknown");
+  }
+});
+window.addEventListener("error", (e) => {
+  console.error(e.error || e.message);
+  const status = document.getElementById("status");
+  if (status) status.textContent = "錯誤：" + (e.message || "Script error");
+});
+</script>
+</body>
+</html>
